@@ -1,0 +1,51 @@
+- hosts: jamf
+  remote_user: root
+  become: yes
+
+  tasks:
+    - name: Stop the Tomcat service
+      service:
+        name: tomcat8
+        state: stopped
+
+    - name: Ensure Tomcat is fully stopped
+      wait_for:
+        port: 8443
+        state: stopped
+
+    - name: Run database backup
+      command: /usr/bin/java -jar /usr/local/jss/bin/JSSDatabaseUtil.jar backup -saveBackupTo /usr/local/jss/backups/database/
+      register: backup
+
+    - debug: var=backup.stdout_lines
+
+    - name: Backup Keystore file
+      copy:
+        src: /usr/local/jss/tomcat/ServerCertificate.pfx
+        dest: /tmp/ServerCertificate.pfx
+        remote_src: True
+
+    - name: Send and run the Linux JSS Installer script
+      script: /Path/To/jssinstaller.run -- -y
+      register: install
+
+    - debug: var=install.stdout_lines
+
+    - name: Restore Keystore
+      copy:
+        src: /tmp/ServerCertificate.pfx
+        dest: /usr/local/jss/tomcat/ServerCertificate.pfx
+        remote_src: True
+
+    - name: Check if JSS is responding correctly. Wait for 1 hour
+      uri: "url=https://{{ ansible_hostname }}.fq.dn:8443/healthCheck.html return_content=true  status_code=401,200"
+      register: response
+      until: response.status|int == 200
+      retries: 240
+      delay: 15
+
+    - name: Schedule database backups
+      command: /usr/bin/java -jar /usr/local/jss/bin/JSSDatabaseUtil.jar schedule -hour 22 -scheduledBackupPath /usr/local/jss/backups/database/ -deleteBackupsOlderThanDays 30
+      register: schedule
+
+    - debug: var=schedule.stdout_lines

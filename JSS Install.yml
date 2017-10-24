@@ -1,0 +1,58 @@
+- hosts: new_setup
+  remote_user: root
+  become: yes
+
+  tasks:
+    - name: Ensure OpenJDK is installed
+      yum:
+        name: java-1.8.0-openjdk
+        state: latest
+
+    - name: Add MySQL repository
+      yum_repository:
+        name: mysql
+        description: MySQL 5.6 Community Server
+        baseurl: http://repo.mysql.com/yum/mysql-5.6-community/el/6/$basearch/
+        gpgcheck: no
+
+    - name: Ensure MySQL is installed
+      yum:
+        name: mysql-server
+        state: latest
+
+    - name: Ensure MySQL-python is installed
+      yum:
+        name: MySQL-python
+        state: latest
+
+    - name: Start the MySQL service
+      systemd:
+        name: mysqld
+        state: started
+        enabled: yes
+
+    - name: Create the jamfsoftware database
+      mysql_db:
+        name: jamfsoftware
+        state: present
+
+    - name: Create the jamfsoftware database user
+      mysql_user:
+        name: jamfsoftware
+        password: jamfsw03
+        priv: 'jamfsoftware.*:ALL'
+        state: present
+
+    - name: Send and run the Linux JSS Installer script
+      script: /Path/To/jssinstaller.run -- -y
+      register: installed
+
+    - debug:
+        var: installed.stdout_lines
+
+    - name: Ensure all other packages are up to date
+      yum: name=* state=latest
+      register: updates
+
+    - debug:
+        var: updates.stdout_lines
